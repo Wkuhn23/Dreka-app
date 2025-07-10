@@ -1,0 +1,65 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+    }
+    
+    function hasValidRating() {
+      let rating = request.resource.data;
+      return rating.venueId is string &&
+             rating.userId is string &&
+             rating.timestamp is timestamp &&
+             (!('lineRating' in rating) || (rating.lineRating is number && rating.lineRating >= 1 && rating.lineRating <= 5)) &&
+             (!('coverRating' in rating) || rating.coverRating is number) &&
+             (!('bathroomRating' in rating) || (rating.bathroomRating is number && rating.bathroomRating >= 1 && rating.bathroomRating <= 5));
+    }
+    
+    // Users collection
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId);
+      allow delete: if false; // Prevent user deletion
+    }
+    
+    // Ratings collection
+    match /ratings/{ratingId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && hasValidRating() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if false; // Prevent rating updates and deletion
+    }
+    
+    // Venues collection
+    match /venues/{venueId} {
+      allow read: if true; // Public read access
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+    
+    // Menu item suggestions collection
+    match /menuItemSuggestions/{suggestionId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
+    }
+    
+    // Venue suggestions collection
+    match /venueSuggestions/{suggestionId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
+    }
+  }
+} 
